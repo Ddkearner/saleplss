@@ -1,0 +1,6 @@
+{
+  "name": "salesplus",
+  "description": "Minimalist, sleek, high-speed retail sales management and transaction tracker.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

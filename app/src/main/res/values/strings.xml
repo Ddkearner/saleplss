@@ -1,0 +1,31 @@
+<resources>
+    <string name="app_name">salesplus</string>
+    <string name="splash_text">salesplus</string>
+    <string name="setup_title">Store Setup</string>
+    <string name="setup_subtitle">Configure your store settings</string>
+    <string name="step_store_name">Store Name</string>
+    <string name="step_store_name_hint">e.g. Apex Retail, Studio 9</string>
+    <string name="step_store_location">Store Location</string>
+    <string name="step_store_location_hint">e.g. Downtown Manhattan, London</string>
+    <string name="step_currency">Primary Currency</string>
+    <string name="action_continue">Continue</string>
+    <string name="action_complete">Save &amp; Start</string>
+    <string name="action_back">Back</string>
+    <string name="home_total_sales">Total Sales</string>
+    <string name="home_today_sales">Today\'s Volume</string>
+    <string name="home_transactions_count">Transactions</string>
+    <string name="home_average_ticket">Avg Ticket</string>
+    <string name="home_recent_transactions">Recent Ledger</string>
+    <string name="home_no_transactions">No transactions recorded yet</string>
+    <string name="btn_add_transaction">Add Transaction</string>
+    <string name="add_txn_title">New Transaction</string>
+    <string name="label_customer_name">Customer Name</string>
+    <string name="hint_customer_name">Enter customer name</string>
+    <string name="label_phone_number">Phone Number</string>
+    <string name="hint_phone_number">Enter customer phone number</string>
+    <string name="label_amount">Transaction Amount</string>
+    <string name="hint_amount">0.00</string>
+    <string name="action_record_transaction">Record Transaction</string>
+    <string name="error_required">This field is required</string>
+    <string name="error_invalid_amount">Please enter a valid amount</string>
+</resources>
