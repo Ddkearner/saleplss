@@ -4,10 +4,15 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.CampaignRecord
+import com.example.data.PaymentMode
 import com.example.data.SalesplusDatabase
 import com.example.data.SalesplusRepository
+import com.example.data.SalesSyncManager
 import com.example.data.StoreProfile
+import com.example.data.SyncState
+import com.example.data.SyncStatus
 import com.example.data.TransactionRecord
+import com.example.util.NetworkMonitor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,8 +28,10 @@ sealed class Screen {
     object Splash : Screen()
     object Setup : Screen()
     object Main : Screen() // Houses Bottom Navigation: Home, Report, History
-    object AddTransaction : Screen() // Quick Sale
+    object AddTransaction : Screen() // Quick Multi-Item Sale
     object CreateCampaign : Screen() // Offer / Message broadcast
+    data class PaymentSuccess(val details: PaymentSuccessDetails) : Screen() // PhonePe style success screen
+    data class CampaignSuccess(val details: CampaignSuccessDetails) : Screen() // Campaign launched success screen
 }
 
 enum class AppTab {
@@ -79,6 +86,10 @@ data class ComprehensiveReport(
     val weekCount: Int,
     val totalSales: Double,
     val totalCount: Int,
+    val totalCashSales: Double,
+    val totalCashCount: Int,
+    val totalOnlineSales: Double,
+    val totalOnlineCount: Int,
     val totalUniqueCustomers: Int,
     val repeatCustomersCount: Int,
     val repeatRatePercentage: Double,
@@ -100,10 +111,12 @@ data class SetupFormState(
 data class AddTxnFormState(
     val customerName: String = "",
     val phoneNumber: String = "",
-    val amount: String = "",
-    val selectedCategories: Set<String> = emptySet(),
+    val matchedCustomerProfile: CustomerProfile? = null,
+    val items: List<CartItem> = listOf(CartItem(category = "Saree", quantity = 1, price = 0.0)),
     val error: String? = null
-)
+) {
+    val totalAmount: Double get() = items.sumOf { it.total }
+}
 
 data class CreateCampaignFormState(
     val title: String = "",
@@ -116,14 +129,43 @@ data class CreateCampaignFormState(
 class SalesplusViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: SalesplusRepository
+    val networkMonitor: NetworkMonitor
+    val syncManager: SalesSyncManager
 
     init {
         val database = SalesplusDatabase.getDatabase(application)
+        networkMonitor = NetworkMonitor(application)
+        syncManager = SalesSyncManager(database.transactionDao(), networkMonitor)
         repository = SalesplusRepository(
             database.storeDao(),
             database.transactionDao(),
-            database.campaignDao()
+            database.campaignDao(),
+            syncManager,
+            networkMonitor
         )
+        // Automatic background synchronization when network is available / restored
+        syncManager.startAutoSync(viewModelScope)
+    }
+
+    val isOnline: StateFlow<Boolean> = networkMonitor.isOnline
+    val isSimulatedOffline: StateFlow<Boolean> = networkMonitor.isSimulatedOffline
+    val pendingSyncCount: StateFlow<Int> = syncManager.pendingCountFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0
+    )
+    val syncState: StateFlow<SyncState> = syncManager.syncState
+    val lastSyncTimestamp: StateFlow<Long?> = syncManager.lastSyncTimestamp
+
+    fun toggleSimulatedOffline() {
+        val currentlySimulated = networkMonitor.isSimulatedOffline.value
+        networkMonitor.setSimulatedOffline(!currentlySimulated)
+    }
+
+    fun triggerManualSync() {
+        viewModelScope.launch {
+            syncManager.syncPendingTransactions()
+        }
     }
 
     private val _currentScreen = MutableStateFlow<Screen>(Screen.Splash)
@@ -220,13 +262,11 @@ class SalesplusViewModel(application: Application) : AndroidViewModel(applicatio
                     _setupForm.value = current.copy(error = "Please enter store name")
                     return
                 }
-                _setupForm.value = current.copy(step = 3, error = null)
+                val location = current.storeLocation.trim().ifEmpty { "Main Market" }
+                _setupForm.value = current.copy(storeLocation = location, error = null)
+                completeSetup()
             }
-            3 -> {
-                if (current.storeLocation.trim().isEmpty()) {
-                    _setupForm.value = current.copy(error = "Please enter city or location")
-                    return
-                }
+            else -> {
                 completeSetup()
             }
         }
@@ -251,77 +291,128 @@ class SalesplusViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    // Quick Sale Entry Actions
+    // Quick Sale Entry Actions with Cart Items
     fun updateCustomerName(name: String) {
         _addTxnForm.value = _addTxnForm.value.copy(customerName = name, error = null)
     }
 
     fun updatePhoneNumber(phone: String) {
         val trimmed = phone.trim()
-        val currentName = _addTxnForm.value.customerName
-        var matchedName = currentName
-        if (trimmed.length >= 10 && currentName.isBlank()) {
-            val existing = transactions.value.firstOrNull { it.phoneNumber.endsWith(trimmed.takeLast(10)) }
-            if (existing != null) {
-                matchedName = existing.customerName
-            }
+        val allProfiles = computeCustomerProfiles(transactions.value)
+        val matched = if (trimmed.length >= 10) {
+            allProfiles.firstOrNull { it.phoneNumber.endsWith(trimmed.takeLast(10)) }
+        } else null
+
+        val name = when {
+            matched != null && matched.customerName.isNotBlank() && matched.customerName != "Customer" -> matched.customerName
+            _addTxnForm.value.customerName.isNotBlank() -> _addTxnForm.value.customerName
+            else -> ""
         }
+
         _addTxnForm.value = _addTxnForm.value.copy(
             phoneNumber = phone,
-            customerName = matchedName,
+            customerName = name,
+            matchedCustomerProfile = matched,
             error = null
         )
     }
 
-    fun updateAmount(amount: String) {
-        _addTxnForm.value = _addTxnForm.value.copy(amount = amount, error = null)
+    fun addCartItem(defaultCategory: String = "Saree") {
+        val updated = _addTxnForm.value.items.toMutableList()
+        updated.add(CartItem(category = defaultCategory, quantity = 1, price = 0.0))
+        _addTxnForm.value = _addTxnForm.value.copy(items = updated, error = null)
     }
 
-    fun toggleCategory(category: String) {
-        val currentSet = _addTxnForm.value.selectedCategories.toMutableSet()
-        if (currentSet.contains(category)) {
-            currentSet.remove(category)
-        } else {
-            currentSet.add(category)
+    fun removeCartItem(itemId: String) {
+        val currentList = _addTxnForm.value.items
+        if (currentList.size <= 1) {
+            // Keep at least one item, just reset it
+            _addTxnForm.value = _addTxnForm.value.copy(
+                items = listOf(CartItem(category = "Saree", quantity = 1, price = 0.0)),
+                error = null
+            )
+            return
         }
-        _addTxnForm.value = _addTxnForm.value.copy(selectedCategories = currentSet, error = null)
+        val updated = currentList.filterNot { it.id == itemId }
+        _addTxnForm.value = _addTxnForm.value.copy(items = updated, error = null)
     }
 
-    fun addQuickAmount(delta: Double) {
-        val currentVal = _addTxnForm.value.amount.toDoubleOrNull() ?: 0.0
-        val newVal = currentVal + delta
-        _addTxnForm.value = _addTxnForm.value.copy(
-            amount = if (newVal % 1.0 == 0.0) newVal.toInt().toString() else String.format(Locale.US, "%.2f", newVal),
-            error = null
-        )
+    fun updateCartItemCategory(itemId: String, category: String) {
+        val updated = _addTxnForm.value.items.map { item ->
+            if (item.id == itemId) item.copy(category = category) else item
+        }
+        _addTxnForm.value = _addTxnForm.value.copy(items = updated, error = null)
     }
 
-    fun submitTransaction(onSuccess: () -> Unit) {
+    fun updateCartItemQuantity(itemId: String, quantity: Int) {
+        val validQty = quantity.coerceAtLeast(1)
+        val updated = _addTxnForm.value.items.map { item ->
+            if (item.id == itemId) item.copy(quantity = validQty) else item
+        }
+        _addTxnForm.value = _addTxnForm.value.copy(items = updated, error = null)
+    }
+
+    fun updateCartItemPrice(itemId: String, price: Double) {
+        val updated = _addTxnForm.value.items.map { item ->
+            if (item.id == itemId) item.copy(price = price.coerceAtLeast(0.0)) else item
+        }
+        _addTxnForm.value = _addTxnForm.value.copy(items = updated, error = null)
+    }
+
+    fun resetAddTxnForm() {
+        _addTxnForm.value = AddTxnFormState()
+    }
+
+    fun submitTransactionWithPaymentMode(mode: PaymentMode) {
         val form = _addTxnForm.value
         val name = form.customerName.trim().ifEmpty { "Customer" }
         val phone = form.phoneNumber.trim()
-        val amount = form.amount.toDoubleOrNull()
-        val categoriesStr = form.selectedCategories.joinToString(", ")
+        val totalAmount = form.totalAmount
 
         if (phone.isEmpty()) {
             _addTxnForm.value = form.copy(error = "Please enter customer mobile number")
             return
         }
-        if (amount == null || amount <= 0.0) {
-            _addTxnForm.value = form.copy(error = "Please enter amount (₹)")
+        if (totalAmount <= 0.0) {
+            _addTxnForm.value = form.copy(error = "Please enter product price (₹)")
             return
         }
 
+        // Build item summary e.g. "Saree (x2), Suit / Kurti (x1)"
+        val categoriesStr = form.items.filter { it.price > 0.0 }.joinToString(", ") { item ->
+            val cat = item.category.ifBlank { "Garment" }
+            if (item.quantity > 1) "$cat x${item.quantity}" else cat
+        }.ifBlank { "General Sale" }
+
+        val isDeviceOnline = networkMonitor.isConnected()
+        val invoiceNum = "INV-${(System.currentTimeMillis() % 1000000).toString().padStart(6, '0')}"
+
         viewModelScope.launch {
-            repository.addTransaction(
+            val recordId = repository.addTransaction(
                 customerName = name,
                 phoneNumber = phone,
-                amount = amount,
-                categories = categoriesStr
+                amount = totalAmount,
+                categories = categoriesStr,
+                paymentMode = mode,
+                customInvoiceNumber = invoiceNum
             )
+
+            val successDetails = PaymentSuccessDetails(
+                transactionId = recordId,
+                customerName = name,
+                phoneNumber = phone,
+                totalAmount = totalAmount,
+                paymentMode = mode,
+                itemsSummary = categoriesStr,
+                timestamp = System.currentTimeMillis(),
+                invoiceNumber = invoiceNum,
+                isOfflineCreated = !isDeviceOnline,
+                syncStatus = if (isDeviceOnline) SyncStatus.SYNCED else SyncStatus.PENDING
+            )
+
+            // Reset form and navigate to PhonePe-like payment success screen
             _addTxnForm.value = AddTxnFormState()
-            _currentScreen.value = Screen.Main
-            onSuccess()
+            _currentScreen.value = Screen.PaymentSuccess(successDetails)
         }
     }
 
@@ -370,9 +461,16 @@ class SalesplusViewModel(application: Application) : AndroidViewModel(applicatio
                 recipientCount = if (targetCount > 0) targetCount else 1,
                 imageUri = form.imageUri
             )
+            val successDetails = CampaignSuccessDetails(
+                title = title,
+                messageText = msg,
+                targetAudience = form.targetAudience,
+                recipientCount = if (targetCount > 0) targetCount else 1,
+                imageUri = form.imageUri
+            )
             _campaignForm.value = CreateCampaignFormState()
             _dismissedCampaignId.value = null
-            _currentScreen.value = Screen.Main
+            _currentScreen.value = Screen.CampaignSuccess(successDetails)
             onSuccess()
         }
     }
@@ -396,41 +494,57 @@ class SalesplusViewModel(application: Application) : AndroidViewModel(applicatio
         val oneDay = 24 * oneHour
 
         val sampleList = listOf(
-            // Today sales
+            // Today sales with CASH and UPI_QR (One offline-created pending sale)
             TransactionRecord(
                 customerName = "Pooja Sharma",
                 phoneNumber = "9820123456",
                 amount = 6500.0,
-                categories = "Saree",
-                timestamp = now - (2 * oneHour)
+                categories = "Saree x1",
+                paymentMode = PaymentMode.UPI_QR,
+                timestamp = now - (2 * oneHour),
+                invoiceNumber = "INV-849102",
+                syncStatus = SyncStatus.PENDING,
+                offlineCreated = true
             ),
             TransactionRecord(
                 customerName = "Rajesh Kumar",
                 phoneNumber = "9811234567",
                 amount = 3200.0,
-                categories = "Menswear",
-                timestamp = now - (4 * oneHour)
+                categories = "Menswear x2",
+                paymentMode = PaymentMode.CASH,
+                timestamp = now - (4 * oneHour),
+                invoiceNumber = "INV-849098",
+                syncStatus = SyncStatus.SYNCED,
+                syncedAt = now - (3 * oneHour),
+                offlineCreated = false
             ),
             TransactionRecord(
                 customerName = "Sunita Gupta",
                 phoneNumber = "9899123456",
                 amount = 2800.0,
-                categories = "Suit / Kurti",
-                timestamp = now - (6 * oneHour)
+                categories = "Suit / Kurti x1",
+                paymentMode = PaymentMode.UPI_QR,
+                timestamp = now - (6 * oneHour),
+                invoiceNumber = "INV-849091",
+                syncStatus = SyncStatus.SYNCED,
+                syncedAt = now - (5 * oneHour),
+                offlineCreated = false
             ),
             // Yesterday
             TransactionRecord(
                 customerName = "Amit Verma",
                 phoneNumber = "9876543210",
                 amount = 14500.0,
-                categories = "Saree, Suit / Kurti",
+                categories = "Saree x2, Suit / Kurti x1",
+                paymentMode = PaymentMode.UPI_QR,
                 timestamp = now - (1 * oneDay)
             ),
             TransactionRecord(
                 customerName = "Neha Patel",
                 phoneNumber = "9821345678",
                 amount = 4200.0,
-                categories = "Footwear / Access.",
+                categories = "Footwear / Access. x1",
+                paymentMode = PaymentMode.CASH,
                 timestamp = now - (1 * oneDay + 3 * oneHour)
             ),
             // 3 days ago (Pooja repeat purchase)
@@ -438,14 +552,16 @@ class SalesplusViewModel(application: Application) : AndroidViewModel(applicatio
                 customerName = "Pooja Sharma",
                 phoneNumber = "9820123456",
                 amount = 5500.0,
-                categories = "Suit / Kurti",
+                categories = "Suit / Kurti x1",
+                paymentMode = PaymentMode.UPI_QR,
                 timestamp = now - (3 * oneDay)
             ),
             TransactionRecord(
                 customerName = "Vikram Singh",
                 phoneNumber = "9833456789",
                 amount = 3800.0,
-                categories = "Menswear",
+                categories = "Menswear x1",
+                paymentMode = PaymentMode.CASH,
                 timestamp = now - (3 * oneDay + 2 * oneHour)
             ),
             // 5 days ago (Sunita repeat purchase)
@@ -453,14 +569,16 @@ class SalesplusViewModel(application: Application) : AndroidViewModel(applicatio
                 customerName = "Sunita Gupta",
                 phoneNumber = "9899123456",
                 amount = 1900.0,
-                categories = "Suit / Kurti",
+                categories = "Suit / Kurti x1",
+                paymentMode = PaymentMode.CASH,
                 timestamp = now - (5 * oneDay)
             ),
             TransactionRecord(
                 customerName = "Anjali Mehta",
                 phoneNumber = "9810987654",
                 amount = 2400.0,
-                categories = "Saree",
+                categories = "Saree x1",
+                paymentMode = PaymentMode.UPI_QR,
                 timestamp = now - (5 * oneDay + 4 * oneHour)
             ),
             // 6 days ago
@@ -468,7 +586,8 @@ class SalesplusViewModel(application: Application) : AndroidViewModel(applicatio
                 customerName = "Ramesh Joshi",
                 phoneNumber = "9845123456",
                 amount = 7200.0,
-                categories = "Menswear",
+                categories = "Menswear x2",
+                paymentMode = PaymentMode.UPI_QR,
                 timestamp = now - (6 * oneDay)
             ),
             // 20 days ago (Deepak repeat visits)
@@ -476,14 +595,16 @@ class SalesplusViewModel(application: Application) : AndroidViewModel(applicatio
                 customerName = "Deepak Rao",
                 phoneNumber = "9870123456",
                 amount = 1800.0,
-                categories = "Footwear / Access.",
+                categories = "Footwear / Access. x1",
+                paymentMode = PaymentMode.CASH,
                 timestamp = now - (20 * oneDay)
             ),
             TransactionRecord(
                 customerName = "Deepak Rao",
                 phoneNumber = "9870123456",
                 amount = 2100.0,
-                categories = "Menswear",
+                categories = "Menswear x1",
+                paymentMode = PaymentMode.UPI_QR,
                 timestamp = now - (22 * oneDay)
             ),
             // 50+ days ago (Inactive customers)
@@ -491,14 +612,16 @@ class SalesplusViewModel(application: Application) : AndroidViewModel(applicatio
                 customerName = "Priyanka Tiwari",
                 phoneNumber = "9819876543",
                 amount = 3500.0,
-                categories = "Saree",
+                categories = "Saree x1",
+                paymentMode = PaymentMode.CASH,
                 timestamp = now - (52 * oneDay)
             ),
             TransactionRecord(
                 customerName = "Manish Malhotra",
                 phoneNumber = "9867543210",
                 amount = 4800.0,
-                categories = "Suit / Kurti",
+                categories = "Suit / Kurti x1",
+                paymentMode = PaymentMode.UPI_QR,
                 timestamp = now - (58 * oneDay)
             )
         )
@@ -518,41 +641,44 @@ class SalesplusViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Customer Segmentation Calculation
     fun computeCustomerProfiles(txns: List<TransactionRecord>): List<CustomerProfile> {
+        val groupedByPhone = txns.groupBy { it.phoneNumber }
         val now = System.currentTimeMillis()
-        val fortyFiveDaysMs = 45L * 24 * 60 * 60 * 1000L
+        val fortyFiveDaysMillis = 45L * 24 * 60 * 60 * 1000
 
-        val grouped = txns.groupBy { it.phoneNumber }
-        return grouped.map { (phone, records) ->
-            val totalSpend = records.sumOf { it.amount }
-            val visitCount = records.size
-            val latest = records.maxByOrNull { it.timestamp }
-            val lastTimestamp = latest?.timestamp ?: now
-            val customerName = latest?.customerName ?: "Customer"
+        return groupedByPhone.map { (phone, userTxns) ->
+            val totalSpend = userTxns.sumOf { it.amount }
+            val visitCount = userTxns.size
+            val latestTxn = userTxns.maxByOrNull { it.timestamp } ?: userTxns.first()
+            val lastVisit = latestTxn.timestamp
+            val name = userTxns.lastOrNull { it.customerName.isNotBlank() && it.customerName != "Customer" }?.customerName
+                ?: userTxns.first().customerName
 
-            val allCats = records.flatMap { it.categories.split(", ") }
-                .filter { it.isNotBlank() }
+            val allCats = userTxns.flatMap { it.categories.split(",") }
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
                 .distinct()
 
+            val isDormant = (now - lastVisit) > fortyFiveDaysMillis
             val segment = when {
                 totalSpend >= 5000.0 -> CustomerSegment.VIP
-                (now - lastTimestamp) > fortyFiveDaysMs -> CustomerSegment.DORMANT
+                isDormant && visitCount > 0 -> CustomerSegment.DORMANT
                 visitCount >= 2 -> CustomerSegment.REGULAR
                 else -> CustomerSegment.NEW_BUYER
             }
 
             CustomerProfile(
                 phoneNumber = phone,
-                customerName = customerName,
+                customerName = name,
                 totalSpend = totalSpend,
                 visitCount = visitCount,
-                lastVisitTimestamp = lastTimestamp,
+                lastVisitTimestamp = lastVisit,
                 categories = allCats,
                 segment = segment
             )
         }.sortedByDescending { it.lastVisitTimestamp }
     }
 
-    // Report Computation
+    // Report Computation with Cash vs UPI breakdown
     fun computeComprehensiveReport(txns: List<TransactionRecord>): ComprehensiveReport {
         val calendar = Calendar.getInstance()
         calendar.set(Calendar.HOUR_OF_DAY, 0)
@@ -576,6 +702,9 @@ class SalesplusViewModel(application: Application) : AndroidViewModel(applicatio
         val totalCount = txns.size
         val avgTicket = if (totalCount > 0) totalSales / totalCount else 0.0
 
+        val cashTxns = txns.filter { it.paymentMode == PaymentMode.CASH }
+        val onlineTxns = txns.filter { it.paymentMode == PaymentMode.UPI_QR }
+
         val customerProfiles = computeCustomerProfiles(txns)
         val totalUnique = customerProfiles.size
         val repeatCustomers = customerProfiles.count { it.visitCount > 1 }
@@ -597,6 +726,10 @@ class SalesplusViewModel(application: Application) : AndroidViewModel(applicatio
             weekCount = weekTxns.size,
             totalSales = totalSales,
             totalCount = totalCount,
+            totalCashSales = cashTxns.sumOf { it.amount },
+            totalCashCount = cashTxns.size,
+            totalOnlineSales = onlineTxns.sumOf { it.amount },
+            totalOnlineCount = onlineTxns.size,
             totalUniqueCustomers = totalUnique,
             repeatCustomersCount = repeatCustomers,
             repeatRatePercentage = repeatRate,
@@ -649,37 +782,14 @@ class SalesplusViewModel(application: Application) : AndroidViewModel(applicatio
 // Indian Number System Formatter
 object IndianCurrencyFormatter {
     fun format(amount: Double): String {
-        val isZero = amount == 0.0
-        val isInt = amount % 1.0 == 0.0
-
-        val formattedNum = if (isZero) {
-            "0"
-        } else if (isInt) {
-            formatIndianLakhs(amount.toLong())
-        } else {
-            val whole = amount.toLong()
-            val fraction = Math.round((amount - whole) * 100)
-            "${formatIndianLakhs(whole)}.${String.format(Locale.US, "%02d", fraction)}"
+        val rounded = kotlin.math.round(amount).toLong()
+        if (rounded < 1000) {
+            return "₹ $rounded"
         }
-
-        return "₹ $formattedNum"
-    }
-
-    private fun formatIndianLakhs(number: Long): String {
-        if (number < 1000) return number.toString()
-        val numStr = number.toString()
-        val lastThree = numStr.takeLast(3)
-        var remaining = numStr.dropLast(3)
-
-        val parts = mutableListOf<String>()
-        while (remaining.length > 2) {
-            parts.add(0, remaining.takeLast(2))
-            remaining = remaining.dropLast(2)
-        }
-        if (remaining.isNotEmpty()) {
-            parts.add(0, remaining)
-        }
-        parts.add(lastThree)
-        return parts.joinToString(",")
+        val s = rounded.toString()
+        val lastThree = s.substring(s.length - 3)
+        val otherNumbers = s.substring(0, s.length - 3)
+        val formattedOther = otherNumbers.reversed().chunked(2).joinToString(",").reversed()
+        return "₹ $formattedOther,$lastThree"
     }
 }

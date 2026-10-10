@@ -11,9 +11,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -34,6 +39,7 @@ import com.example.ui.IndianCurrencyFormatter
 import com.example.ui.theme.AppleBlack
 import com.example.ui.theme.AppleCardBg
 import com.example.ui.theme.AppleFontFamily
+import com.example.ui.theme.AppleGreen
 import com.example.ui.theme.AppleSystemBg
 import com.example.ui.theme.AppleSystemGray
 import com.example.ui.theme.AppleSystemGray5
@@ -186,6 +192,123 @@ fun ReportScreen(
                         subLabel = "Per bill",
                         testTag = "report_avg_ticket"
                     )
+                }
+            }
+        }
+
+        // Card 2B: Payment Mode Breakdown (Cash vs UPI QR)
+        item(key = "report_payment_mode_matrix") {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(AppleCardBg)
+                    .padding(20.dp)
+                    .testTag("report_payment_modes_card")
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "PAYMENT MODES",
+                        fontSize = 11.sp,
+                        fontFamily = AppleFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        color = AppleSystemGray
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // UPI QR Card
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(AppleSystemGray6)
+                                .padding(14.dp)
+                        ) {
+                            Column {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.QrCode2,
+                                        contentDescription = "UPI",
+                                        tint = AppleBlack,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "UPI QR",
+                                        fontSize = 12.sp,
+                                        fontFamily = AppleFontFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        color = AppleBlack
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = IndianCurrencyFormatter.format(report.totalOnlineSales),
+                                    fontSize = 17.sp,
+                                    fontFamily = AppleFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AppleBlack
+                                )
+                                Text(
+                                    text = "${report.totalOnlineCount} transactions",
+                                    fontSize = 11.sp,
+                                    fontFamily = AppleFontFamily,
+                                    color = AppleSystemGray
+                                )
+                            }
+                        }
+
+                        // Cash Card
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(AppleSystemGray6)
+                                .padding(14.dp)
+                        ) {
+                            Column {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Payments,
+                                        contentDescription = "Cash",
+                                        tint = AppleBlack,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "CASH",
+                                        fontSize = 12.sp,
+                                        fontFamily = AppleFontFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        color = AppleBlack
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = IndianCurrencyFormatter.format(report.totalCashSales),
+                                    fontSize = 17.sp,
+                                    fontFamily = AppleFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AppleBlack
+                                )
+                                Text(
+                                    text = "${report.totalCashCount} transactions",
+                                    fontSize = 11.sp,
+                                    fontFamily = AppleFontFamily,
+                                    color = AppleSystemGray
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

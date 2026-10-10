@@ -5,15 +5,19 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.CampaignRecord
 import com.example.data.SalesplusDatabase
+import com.example.data.SalesSyncManager
 import com.example.data.StoreProfile
+import com.example.data.SyncStatus
 import com.example.data.TransactionRecord
 import com.example.ui.CustomerSegment
 import com.example.ui.IndianCurrencyFormatter
 import com.example.ui.LocalizationProvider
 import com.example.ui.SalesplusViewModel
+import com.example.util.NetworkMonitor
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -104,5 +108,75 @@ class ExampleRobolectricTest {
         val profiles = vm.computeCustomerProfiles(allTxns)
         assertTrue(profiles.isNotEmpty())
         assertEquals(CustomerSegment.VIP, profiles.first().segment)
+    }
+
+    @Test
+    fun `test local-first Room offline sales entry and background synchronization`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = SalesplusDatabase.getDatabase(context)
+        val txnDao = db.transactionDao()
+        txnDao.deleteAllTransactions()
+
+        val networkMonitor = NetworkMonitor(context)
+        // Simulate device offline
+        networkMonitor.setSimulatedOffline(true)
+        assertFalse(networkMonitor.isConnected())
+
+        val syncManager = SalesSyncManager(txnDao, networkMonitor)
+
+        // 1. Enter sales while completely offline
+        val offlineSale1 = TransactionRecord(
+            customerName = "Sunita Rao",
+            phoneNumber = "9820011223",
+            amount = 4500.0,
+            categories = "Saree x1",
+            invoiceNumber = "INV-OFF001",
+            syncStatus = SyncStatus.PENDING,
+            offlineCreated = true
+        )
+        val offlineSale2 = TransactionRecord(
+            customerName = "Manish Joshi",
+            phoneNumber = "9819922334",
+            amount = 3200.0,
+            categories = "Kurti x2",
+            invoiceNumber = "INV-OFF002",
+            syncStatus = SyncStatus.PENDING,
+            offlineCreated = true
+        )
+
+        txnDao.insertTransaction(offlineSale1)
+        txnDao.insertTransaction(offlineSale2)
+
+        // Verify local Room persistence worked while offline
+        val pendingList = txnDao.getPendingSyncTransactions()
+        assertEquals(2, pendingList.size)
+        assertEquals(2, txnDao.getPendingSyncCount().first())
+
+        val savedFirst = pendingList.first()
+        assertEquals("Sunita Rao", savedFirst.customerName)
+        assertEquals(SyncStatus.PENDING, savedFirst.syncStatus)
+        assertTrue(savedFirst.offlineCreated)
+
+        // Attempting to sync while offline should fail gracefully without crashing
+        val syncedWhileOffline = syncManager.syncPendingTransactions()
+        assertEquals(0, syncedWhileOffline)
+        assertEquals(2, txnDao.getPendingSyncCount().first())
+
+        // 2. Network connection is restored!
+        networkMonitor.setSimulatedOffline(false)
+        assertTrue(networkMonitor.isConnected())
+
+        // 3. Trigger synchronization
+        val syncedCount = syncManager.syncPendingTransactions()
+        assertEquals(2, syncedCount)
+
+        // Verify all records in Room are now marked SYNCED
+        assertEquals(0, txnDao.getPendingSyncCount().first())
+        val allTxns = txnDao.getAllTransactions().first()
+        assertEquals(2, allTxns.size)
+        for (txn in allTxns) {
+            assertEquals(SyncStatus.SYNCED, txn.syncStatus)
+            assertNotNull(txn.syncedAt)
+        }
     }
 }

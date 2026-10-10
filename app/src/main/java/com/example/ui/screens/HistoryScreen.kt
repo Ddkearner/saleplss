@@ -15,10 +15,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -29,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
@@ -36,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.PaymentMode
+import com.example.data.SyncStatus
 import com.example.data.TransactionRecord
 import com.example.ui.CustomerProfile
 import com.example.ui.CustomerSegment
@@ -44,6 +50,7 @@ import com.example.ui.IndianCurrencyFormatter
 import com.example.ui.theme.AppleBlack
 import com.example.ui.theme.AppleCardBg
 import com.example.ui.theme.AppleFontFamily
+import com.example.ui.theme.AppleGreen
 import com.example.ui.theme.AppleSystemBg
 import com.example.ui.theme.AppleSystemGray
 import com.example.ui.theme.AppleSystemGray5
@@ -59,6 +66,9 @@ fun HistoryScreen(
     customerProfiles: List<CustomerProfile>,
     historySubTab: HistorySubTab,
     searchQuery: String,
+    isOnline: Boolean = true,
+    pendingSyncCount: Int = 0,
+    onTriggerSync: () -> Unit = {},
     onSubTabChange: (HistorySubTab) -> Unit,
     onSearchQueryChange: (String) -> Unit
 ) {
@@ -354,15 +364,28 @@ private fun SaleRow(txn: TransactionRecord) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = txn.customerName,
-                fontSize = 15.sp,
-                fontFamily = AppleFontFamily,
-                fontWeight = FontWeight.Bold,
-                color = AppleBlack,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = txn.customerName,
+                    fontSize = 15.sp,
+                    fontFamily = AppleFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = AppleBlack,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (txn.invoiceNumber.isNotBlank()) {
+                    Text(
+                        text = "#${txn.invoiceNumber}",
+                        fontSize = 10.sp,
+                        fontFamily = AppleFontFamily,
+                        color = AppleSystemGray
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(2.dp))
 
@@ -398,12 +421,32 @@ private fun SaleRow(txn: TransactionRecord) {
                 color = AppleBlack
             )
             Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = formattedDate,
-                fontSize = 11.sp,
-                fontFamily = AppleFontFamily,
-                color = AppleSystemGray
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                val isUpi = txn.paymentMode == PaymentMode.UPI_QR
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(AppleSystemGray6)
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        text = if (isUpi) "UPI QR" else "CASH",
+                        fontSize = 9.sp,
+                        fontFamily = AppleFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = AppleBlack
+                    )
+                }
+                Text(
+                    text = formattedDate,
+                    fontSize = 11.sp,
+                    fontFamily = AppleFontFamily,
+                    color = AppleSystemGray
+                )
+            }
         }
     }
 }

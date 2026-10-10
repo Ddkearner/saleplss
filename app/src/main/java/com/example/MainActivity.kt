@@ -48,9 +48,11 @@ import com.example.ui.HistorySubTab
 import com.example.ui.SalesplusViewModel
 import com.example.ui.Screen
 import com.example.ui.screens.AddTransactionScreen
+import com.example.ui.screens.CampaignSuccessScreen
 import com.example.ui.screens.CreateCampaignScreen
 import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.PaymentSuccessScreen
 import com.example.ui.screens.ReportScreen
 import com.example.ui.screens.SetupScreen
 import com.example.ui.screens.SplashScreen
@@ -95,6 +97,9 @@ fun SalesplusApp(
     val isDemoMode by viewModel.isDemoMode.collectAsState()
     val dismissedCampaignId by viewModel.dismissedCampaignId.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val isOnline by viewModel.isOnline.collectAsState()
+    val isSimulatedOffline by viewModel.isSimulatedOffline.collectAsState()
+    val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
 
     val customerProfiles = remember(transactions) {
         viewModel.computeCustomerProfiles(transactions)
@@ -162,6 +167,11 @@ fun SalesplusApp(
                                     isDemoMode = isDemoMode,
                                     todaySales = comprehensiveReport.todaySales,
                                     todaySalesCount = comprehensiveReport.todayCount,
+                                    isOnline = isOnline,
+                                    isSimulatedOffline = isSimulatedOffline,
+                                    pendingSyncCount = pendingSyncCount,
+                                    onToggleSimulatedOffline = { viewModel.toggleSimulatedOffline() },
+                                    onTriggerSync = { viewModel.triggerManualSync() },
                                     onOpenAddTransaction = {
                                         viewModel.navigateTo(Screen.AddTransaction)
                                     },
@@ -191,6 +201,9 @@ fun SalesplusApp(
                                     customerProfiles = customerProfiles,
                                     historySubTab = historySubTab,
                                     searchQuery = searchQuery,
+                                    isOnline = isOnline,
+                                    pendingSyncCount = pendingSyncCount,
+                                    onTriggerSync = { viewModel.triggerManualSync() },
                                     onSubTabChange = { viewModel.selectHistorySubTab(it) },
                                     onSearchQueryChange = { viewModel.updateSearchQuery(it) }
                                 )
@@ -204,20 +217,32 @@ fun SalesplusApp(
                 AddTransactionScreen(
                     language = storeProfile?.language ?: setupForm.language,
                     formState = addTxnForm,
+                    isOnline = isOnline,
                     onCustomerNameChange = { viewModel.updateCustomerName(it) },
                     onPhoneNumberChange = { viewModel.updatePhoneNumber(it) },
-                    onAmountChange = { viewModel.updateAmount(it) },
-                    onToggleCategory = { viewModel.toggleCategory(it) },
-                    onAddQuickAmount = { viewModel.addQuickAmount(it) },
-                    onSubmit = {
-                        viewModel.submitTransaction(
-                            onSuccess = {
-                                // Returned to Screen.Main in ViewModel
-                            }
-                        )
+                    onAddCartItem = { viewModel.addCartItem(it) },
+                    onRemoveCartItem = { viewModel.removeCartItem(it) },
+                    onUpdateCartItemCategory = { id, cat -> viewModel.updateCartItemCategory(id, cat) },
+                    onUpdateCartItemQuantity = { id, qty -> viewModel.updateCartItemQuantity(id, qty) },
+                    onUpdateCartItemPrice = { id, price -> viewModel.updateCartItemPrice(id, price) },
+                    onSubmitWithMode = { mode ->
+                        viewModel.submitTransactionWithPaymentMode(mode)
                     },
                     onBack = {
                         viewModel.navigateTo(Screen.Main)
+                    }
+                )
+            }
+
+            is Screen.PaymentSuccess -> {
+                PaymentSuccessScreen(
+                    details = screen.details,
+                    onDone = {
+                        viewModel.navigateTo(Screen.Main)
+                    },
+                    onNewSale = {
+                        viewModel.resetAddTxnForm()
+                        viewModel.navigateTo(Screen.AddTransaction)
                     }
                 )
             }
@@ -235,12 +260,23 @@ fun SalesplusApp(
                         viewModel.submitCampaign(
                             customerProfiles = customerProfiles,
                             onSuccess = {
-                                // Returned to Screen.Main in ViewModel
                             }
                         )
                     },
                     onBack = {
                         viewModel.navigateTo(Screen.Main)
+                    }
+                )
+            }
+
+            is Screen.CampaignSuccess -> {
+                CampaignSuccessScreen(
+                    details = screen.details,
+                    onDone = {
+                        viewModel.navigateTo(Screen.Main)
+                    },
+                    onNewOffer = {
+                        viewModel.navigateTo(Screen.CreateCampaign)
                     }
                 )
             }

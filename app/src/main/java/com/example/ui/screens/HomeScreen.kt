@@ -15,13 +15,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -36,7 +40,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.CampaignRecord
+import com.example.data.PaymentMode
 import com.example.data.StoreProfile
 import com.example.data.TransactionRecord
 import com.example.ui.AppStrings
@@ -61,6 +68,7 @@ import com.example.ui.theme.AppleSystemGray
 import com.example.ui.theme.AppleSystemGray5
 import com.example.ui.theme.AppleSystemGray6
 import com.example.ui.theme.AppleWhite
+import com.example.util.ApkShareHelper
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -75,6 +83,11 @@ fun HomeScreen(
     isDemoMode: Boolean,
     todaySales: Double,
     todaySalesCount: Int,
+    isOnline: Boolean = true,
+    isSimulatedOffline: Boolean = false,
+    pendingSyncCount: Int = 0,
+    onToggleSimulatedOffline: () -> Unit = {},
+    onTriggerSync: () -> Unit = {},
     onOpenAddTransaction: () -> Unit,
     onOpenCreateCampaign: () -> Unit,
     onToggleDemoMode: () -> Unit,
@@ -82,6 +95,7 @@ fun HomeScreen(
 ) {
     val language = storeProfile?.language ?: "en"
     val strings: AppStrings = LocalizationProvider.getStrings(language)
+    val context = LocalContext.current
     val storeName = storeProfile?.storeName?.ifBlank { "Salesplus Store" } ?: "Salesplus Store"
     val storeLocation = storeProfile?.storeLocation?.ifBlank { "India" } ?: "India"
 
@@ -108,6 +122,28 @@ fun HomeScreen(
 
     val latestActiveCampaign = remember(campaigns, dismissedCampaignId) {
         campaigns.firstOrNull { it.isActive && it.id != dismissedCampaignId }
+    }
+
+    val todayCashTotal = remember(transactions) {
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val startOfToday = calendar.timeInMillis
+        transactions.filter { it.timestamp >= startOfToday && it.paymentMode == PaymentMode.CASH }.sumOf { it.amount }
+    }
+
+    val todayUpiTotal = remember(transactions) {
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val startOfToday = calendar.timeInMillis
+        transactions.filter { it.timestamp >= startOfToday && it.paymentMode == PaymentMode.UPI_QR }.sumOf { it.amount }
     }
 
     Box(
@@ -140,30 +176,61 @@ fun HomeScreen(
                             overflow = TextOverflow.Ellipsis
                         )
 
-                        // Test Mode / Simulation button (requested in place of rupees symbol)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (isDemoMode) AppleBlack else AppleCardBg)
-                                .clickable { onToggleDemoMode() }
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                                .testTag("toggle_demo_mode_button")
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(
-                                imageVector = if (isDemoMode) Icons.Default.Refresh else Icons.Default.PlayArrow,
-                                contentDescription = if (isDemoMode) "Reset Test Data" else "Run Test Data",
-                                tint = if (isDemoMode) AppleWhite else AppleBlack,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (isDemoMode) "Test Mode Active" else "Test Run",
-                                fontSize = 11.sp,
-                                fontFamily = AppleFontFamily,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isDemoMode) AppleWhite else AppleBlack
-                            )
+                            // Share APK button
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(AppleCardBg)
+                                    .clickable { ApkShareHelper.shareInstalledApk(context) }
+                                    .padding(horizontal = 9.dp, vertical = 5.dp)
+                                    .testTag("home_share_apk_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Share APK",
+                                    tint = AppleBlack,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Share APK",
+                                    fontSize = 11.sp,
+                                    fontFamily = AppleFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AppleBlack
+                                )
+                            }
+
+                            // Test Mode / Simulation button (requested in place of rupees symbol)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isDemoMode) AppleBlack else AppleCardBg)
+                                    .clickable { onToggleDemoMode() }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                                    .testTag("toggle_demo_mode_button")
+                            ) {
+                                Icon(
+                                    imageVector = if (isDemoMode) Icons.Default.Refresh else Icons.Default.PlayArrow,
+                                    contentDescription = if (isDemoMode) "Reset Test Data" else "Run Test Data",
+                                    tint = if (isDemoMode) AppleWhite else AppleBlack,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (isDemoMode) "Test Mode Active" else "Test Run",
+                                    fontSize = 11.sp,
+                                    fontFamily = AppleFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDemoMode) AppleWhite else AppleBlack
+                                )
+                            }
                         }
                     }
 
@@ -326,7 +393,61 @@ fun HomeScreen(
                             overflow = TextOverflow.Ellipsis
                         )
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Cash and UPI pills
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(AppleSystemGray6)
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.QrCode2,
+                                    contentDescription = "UPI",
+                                    tint = AppleBlack,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "UPI ${IndianCurrencyFormatter.format(todayUpiTotal)}",
+                                    fontSize = 11.sp,
+                                    fontFamily = AppleFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AppleBlack
+                                )
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(AppleSystemGray6)
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Payments,
+                                    contentDescription = "Cash",
+                                    tint = AppleBlack,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Cash ${IndianCurrencyFormatter.format(todayCashTotal)}",
+                                    fontSize = 11.sp,
+                                    fontFamily = AppleFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AppleBlack
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),

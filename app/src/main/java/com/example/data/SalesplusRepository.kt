@@ -1,15 +1,21 @@
 package com.example.data
 
+import com.example.util.NetworkMonitor
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import java.util.UUID
 
 class SalesplusRepository(
     private val storeDao: StoreDao,
     private val transactionDao: TransactionDao,
-    private val campaignDao: CampaignDao
+    private val campaignDao: CampaignDao,
+    val syncManager: SalesSyncManager? = null,
+    val networkMonitor: NetworkMonitor? = null
 ) {
     val storeProfile: Flow<StoreProfile?> = storeDao.getStoreProfile()
     val allTransactions: Flow<List<TransactionRecord>> = transactionDao.getAllTransactions()
     val allCampaigns: Flow<List<CampaignRecord>> = campaignDao.getAllCampaigns()
+    val pendingSyncCount: Flow<Int> = transactionDao.getPendingSyncCount()
 
     suspend fun saveStoreProfile(name: String, location: String, language: String) {
         val profile = StoreProfile(
@@ -29,20 +35,44 @@ class SalesplusRepository(
         phoneNumber: String,
         amount: Double,
         categories: String = "",
-        customTimestamp: Long? = null
+        paymentMode: PaymentMode = PaymentMode.CASH,
+        customTimestamp: Long? = null,
+        customInvoiceNumber: String? = null
     ): Long {
+        val isDeviceOnline = networkMonitor?.isConnected() ?: true
+        val generatedInv = customInvoiceNumber ?: "INV-${(System.currentTimeMillis() % 1000000).toString().padStart(6, '0')}"
+
         val record = TransactionRecord(
+            uuid = UUID.randomUUID().toString(),
+            invoiceNumber = generatedInv,
             customerName = customerName.trim(),
             phoneNumber = phoneNumber.trim(),
             amount = amount,
             categories = categories.trim(),
-            timestamp = customTimestamp ?: System.currentTimeMillis()
+            paymentMode = paymentMode,
+            timestamp = customTimestamp ?: System.currentTimeMillis(),
+            syncStatus = SyncStatus.PENDING,
+            syncedAt = null,
+            offlineCreated = !isDeviceOnline
         )
-        return transactionDao.insertTransaction(record)
+
+        // 1. Guaranteed Local-First Room persistence
+        val insertedId = transactionDao.insertTransaction(record)
+
+        // 2. If online, trigger background sync
+        if (isDeviceOnline) {
+            syncManager?.syncPendingTransactions()
+        }
+
+        return insertedId
     }
 
     suspend fun insertTransactionRecord(record: TransactionRecord): Long {
         return transactionDao.insertTransaction(record)
+    }
+
+    suspend fun syncPendingTransactions(): Int {
+        return syncManager?.syncPendingTransactions() ?: 0
     }
 
     suspend fun deleteTransaction(id: Long) {

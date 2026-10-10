@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [StoreProfile::class, TransactionRecord::class, CampaignRecord::class],
-    version = 5,
+    version = 7,
     exportSchema = false
 )
 abstract class SalesplusDatabase : RoomDatabase() {

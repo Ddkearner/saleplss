@@ -6,51 +6,48 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.Campaign
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -66,31 +63,14 @@ import com.example.ui.theme.AppleSystemGray
 import com.example.ui.theme.AppleSystemGray6
 import com.example.ui.theme.AppleWhite
 
-data class OfferTemplate(
-    val title: String,
-    val defaultMessage: String
+val QuickOfferTitlePills = listOf(
+    "New Stock",
+    "Special Discount",
+    "Festival Offer",
+    "Wedding Collection",
+    "Clearance Sale"
 )
 
-val QuickOfferTemplates = listOf(
-    OfferTemplate(
-        title = "New Stock",
-        defaultMessage = "Dukaan par naya collection aa gaya hai. Aapke pasand ka shandar stock aaya hai, zaroor visit karein!"
-    ),
-    OfferTemplate(
-        title = "Special Discount",
-        defaultMessage = "Hamari dukaan par special discount offer shuru ho gaya hai. Zaroor aayiye aur offer ka labh uthaiye!"
-    ),
-    OfferTemplate(
-        title = "Party Wear",
-        defaultMessage = "Naye party-wear aur wedding collection ka naya stock khula hai. Zaroor aayiye!"
-    ),
-    OfferTemplate(
-        title = "Custom",
-        defaultMessage = ""
-    )
-)
-
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CreateCampaignScreen(
     formState: CreateCampaignFormState,
@@ -106,6 +86,8 @@ fun CreateCampaignScreen(
     BackHandler {
         onBack()
     }
+
+    val focusManager = LocalFocusManager.current
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -127,467 +109,401 @@ fun CreateCampaignScreen(
         else -> totalCount
     }
 
-    var selectedTemplateIndex by remember { mutableStateOf(0) }
-
-    // Auto-fill default template if empty initially
     LaunchedEffect(Unit) {
-        if (formState.title.isEmpty() && formState.messageText.isEmpty()) {
-            val initial = QuickOfferTemplates[0]
-            onTitleChange(initial.title)
-            onMessageChange(initial.defaultMessage)
+        if (formState.title.isEmpty()) {
+            onTitleChange("New Stock")
         }
     }
 
+    // Flexible, single-screen layout with zero scroll required
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(AppleSystemBg)
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 14.dp)
+            .imePadding()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
             .testTag("create_campaign_screen_container"),
-        verticalArrangement = Arrangement.SpaceBetween
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f, fill = false)
-                .verticalScroll(rememberScrollState())
+        // 1. Sleek Top Navigation Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Minimal Header
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(AppleCardBg)
+                    .clickable { onBack() }
+                    .padding(horizontal = 12.dp, vertical = 7.dp)
+                    .testTag("campaign_back_button")
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(AppleCardBg)
-                        .clickable { onBack() }
-                        .padding(horizontal = 14.dp, vertical = 8.dp)
-                        .testTag("campaign_back_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = AppleBlack,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Back",
-                        fontSize = 14.sp,
-                        fontFamily = AppleFontFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        color = AppleBlack
-                    )
-                }
-
-                Text(
-                    text = "Send Offer",
-                    fontSize = 17.sp,
-                    fontFamily = AppleFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    color = AppleBlack
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = AppleBlack,
+                    modifier = Modifier.size(16.dp)
                 )
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(AppleCardBg)
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Campaign,
-                        contentDescription = "Offer",
-                        tint = AppleBlack,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // Step 1: 1-Tap Offer Selection
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(AppleCardBg)
-                    .padding(18.dp)
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "1. CHOOSE OFFER",
-                        fontSize = 11.sp,
-                        fontFamily = AppleFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp,
-                        color = AppleSystemGray
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        QuickOfferTemplates.forEachIndexed { index, template ->
-                            val isSelected = selectedTemplateIndex == index
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(if (isSelected) AppleBlack else AppleSystemGray6)
-                                    .clickable {
-                                        selectedTemplateIndex = index
-                                        onTitleChange(template.title)
-                                        if (template.defaultMessage.isNotEmpty()) {
-                                            onMessageChange(template.defaultMessage)
-                                        }
-                                    }
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    if (isSelected) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = "Selected",
-                                            tint = AppleWhite,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                    }
-                                    Text(
-                                        text = template.title,
-                                        fontSize = 13.sp,
-                                        fontFamily = AppleFontFamily,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                                        color = if (isSelected) AppleWhite else AppleBlack
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Step 2: Target Audience Pills
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(AppleCardBg)
-                    .padding(18.dp)
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "2. SEND TO",
-                        fontSize = 11.sp,
-                        fontFamily = AppleFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp,
-                        color = AppleSystemGray
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        AudiencePill(
-                            modifier = Modifier.weight(1f),
-                            label = "All",
-                            count = totalCount,
-                            isSelected = formState.targetAudience == "ALL",
-                            onClick = { onAudienceChange("ALL") }
-                        )
-                        AudiencePill(
-                            modifier = Modifier.weight(1f),
-                            label = "VIP",
-                            count = vipCount,
-                            isSelected = formState.targetAudience == "VIP",
-                            onClick = { onAudienceChange("VIP") }
-                        )
-                        AudiencePill(
-                            modifier = Modifier.weight(1f),
-                            label = "Regular",
-                            count = regularCount,
-                            isSelected = formState.targetAudience == "REGULAR",
-                            onClick = { onAudienceChange("REGULAR") }
-                        )
-                        AudiencePill(
-                            modifier = Modifier.weight(1f),
-                            label = "Inactive",
-                            count = dormantCount,
-                            isSelected = formState.targetAudience == "INACTIVE",
-                            onClick = { onAudienceChange("INACTIVE") }
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Step 3: Add Photo (Optional)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(AppleCardBg)
-                    .padding(18.dp)
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "3. ADD PHOTO (OPTIONAL)",
-                            fontSize = 11.sp,
-                            fontFamily = AppleFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.8.sp,
-                            color = AppleSystemGray
-                        )
-                        if (formState.imageUri != null) {
-                            Text(
-                                text = "Remove",
-                                fontSize = 12.sp,
-                                fontFamily = AppleFontFamily,
-                                fontWeight = FontWeight.SemiBold,
-                                color = AppleBlack,
-                                modifier = Modifier.clickable { onImageChange(null) }
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    if (formState.imageUri == null) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(AppleSystemGray6)
-                                .clickable {
-                                    photoPickerLauncher.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                    )
-                                }
-                                .padding(16.dp)
-                                .testTag("pick_image_button")
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(AppleCardBg),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AddPhotoAlternate,
-                                    contentDescription = "Add Photo",
-                                    tint = AppleBlack,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column {
-                                Text(
-                                    text = "Choose Photo from Gallery",
-                                    fontSize = 14.sp,
-                                    fontFamily = AppleFontFamily,
-                                    fontWeight = FontWeight.Bold,
-                                    color = AppleBlack
-                                )
-                                Text(
-                                    text = "Attach photo of saree, suit, or offer banner",
-                                    fontSize = 12.sp,
-                                    fontFamily = AppleFontFamily,
-                                    color = AppleSystemGray
-                                )
-                            }
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(180.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(AppleSystemGray6)
-                        ) {
-                            AsyncImage(
-                                model = formState.imageUri,
-                                contentDescription = "Attached Offer Photo",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-
-                            IconButton(
-                                onClick = { onImageChange(null) },
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(8.dp)
-                                    .size(30.dp)
-                                    .clip(RoundedCornerShape(15.dp))
-                                    .background(AppleBlack.copy(alpha = 0.7f))
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Remove Photo",
-                                    tint = AppleWhite,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Step 4: Message Content Box
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(AppleCardBg)
-                    .padding(18.dp)
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "4. MESSAGE",
-                            fontSize = 11.sp,
-                            fontFamily = AppleFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.8.sp,
-                            color = AppleSystemGray
-                        )
-                        Text(
-                            text = "Tap to edit",
-                            fontSize = 11.sp,
-                            fontFamily = AppleFontFamily,
-                            color = AppleSystemGray
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(AppleSystemGray6)
-                            .padding(14.dp)
-                            .testTag("campaign_message_input")
-                    ) {
-                        if (formState.messageText.isEmpty()) {
-                            Text(
-                                text = "Type your offer or announcement here...",
-                                color = AppleSystemGray,
-                                fontSize = 13.sp,
-                                fontFamily = AppleFontFamily
-                            )
-                        }
-                        BasicTextField(
-                            value = formState.messageText,
-                            onValueChange = {
-                                onMessageChange(it)
-                                if (formState.title.isEmpty() || formState.title == "Custom") {
-                                    onTitleChange(it.take(24))
-                                }
-                            },
-                            textStyle = TextStyle(
-                                fontSize = 14.sp,
-                                fontFamily = AppleFontFamily,
-                                fontWeight = FontWeight.Normal,
-                                color = AppleBlack,
-                                lineHeight = 20.sp
-                            ),
-                            cursorBrush = SolidColor(AppleBlack),
-                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Clean customer message preview with photo indicator
-                    val previewName = customerProfiles.firstOrNull()?.customerName?.ifBlank { "Customer" } ?: "Sharma ji"
-                    Text(
-                        text = "Customer receives: \"Namaste $previewName, ${formState.messageText.ifBlank { "Dukaan par naya stock aaya hai..." }}\"" + if (formState.imageUri != null) " [📷 Photo attached]" else "",
-                        fontSize = 11.sp,
-                        fontFamily = AppleFontFamily,
-                        color = AppleSystemGray,
-                        lineHeight = 16.sp
-                    )
-                }
-            }
-
-            if (!formState.error.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = formState.error,
+                    text = "Back",
                     fontSize = 13.sp,
                     fontFamily = AppleFontFamily,
                     fontWeight = FontWeight.SemiBold,
-                    color = AppleBlack,
-                    modifier = Modifier.testTag("campaign_error_text")
+                    color = AppleBlack
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "New Offer",
+                fontSize = 17.sp,
+                fontFamily = AppleFontFamily,
+                fontWeight = FontWeight.Bold,
+                color = AppleBlack
+            )
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(AppleBlack)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "$targetCount Audience",
+                    fontSize = 11.sp,
+                    fontFamily = AppleFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = AppleWhite
+                )
+            }
         }
 
-        // Bottom Button
+        // 2. Offer Title Section: 1-Click Select Pills + Quick Custom Typing
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 6.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(AppleCardBg)
+                .padding(horizontal = 14.dp, vertical = 12.dp)
         ) {
-            Button(
-                onClick = onSubmit,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .testTag("run_campaign_button"),
-                shape = RoundedCornerShape(28.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = AppleBlack,
-                    contentColor = AppleWhite
-                ),
-                elevation = ButtonDefaults.buttonElevation(
-                    defaultElevation = 0.dp,
-                    pressedElevation = 0.dp
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "OFFER TITLE",
+                    fontSize = 10.sp,
+                    fontFamily = AppleFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp,
+                    color = AppleSystemGray
                 )
-            ) {
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // 1-Click Suggestion Pills
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = "Send to $targetCount Customers",
-                        fontSize = 16.sp,
-                        fontFamily = AppleFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        color = AppleWhite
+                    QuickOfferTitlePills.forEach { titleOption ->
+                        val isSelected = formState.title.equals(titleOption, ignoreCase = true)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) AppleBlack else AppleSystemGray6)
+                                .clickable { onTitleChange(titleOption) }
+                                .padding(horizontal = 11.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = titleOption,
+                                fontSize = 12.sp,
+                                fontFamily = AppleFontFamily,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) AppleWhite else AppleBlack
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Direct Custom Title Input (If retailer wants their own title)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(AppleSystemGray6)
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    if (formState.title.isEmpty()) {
+                        Text(
+                            text = "Or type custom title...",
+                            color = AppleSystemGray,
+                            fontSize = 13.sp,
+                            fontFamily = AppleFontFamily
+                        )
+                    }
+                    BasicTextField(
+                        value = formState.title,
+                        onValueChange = onTitleChange,
+                        textStyle = TextStyle(
+                            fontSize = 13.sp,
+                            fontFamily = AppleFontFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AppleBlack
+                        ),
+                        singleLine = true,
+                        cursorBrush = SolidColor(AppleBlack),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("campaign_title_input")
                     )
                 }
+            }
+        }
+
+        // 3. Gemini-Style Clean Prompt Box (Expands flexibly via weight(1f))
+        // No auto-write / auto-fill! User freely types their prompt/message.
+        // Product photo option on the right with chip preview when attached.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clip(RoundedCornerShape(18.dp))
+                .background(AppleCardBg)
+                .padding(14.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Attached Product Photo Pill Preview (if photo chosen)
+                if (formState.imageUri != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(AppleSystemGray6)
+                            .padding(horizontal = 8.dp, vertical = 5.dp)
+                    ) {
+                        AsyncImage(
+                            model = formState.imageUri,
+                            contentDescription = "Attached photo preview",
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(RoundedCornerShape(6.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Product Photo Attached",
+                            fontSize = 12.sp,
+                            fontFamily = AppleFontFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AppleBlack
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(AppleSystemGray.copy(alpha = 0.2f))
+                                .clickable { onImageChange(null) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Remove photo",
+                                tint = AppleBlack,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // Clean Prompt Input Field (takes available height)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    if (formState.messageText.isEmpty()) {
+                        Text(
+                            text = "Type offer message or prompt here...",
+                            color = AppleSystemGray,
+                            fontSize = 14.sp,
+                            fontFamily = AppleFontFamily
+                        )
+                    }
+                    BasicTextField(
+                        value = formState.messageText,
+                        onValueChange = onMessageChange,
+                        textStyle = TextStyle(
+                            fontSize = 14.sp,
+                            fontFamily = AppleFontFamily,
+                            fontWeight = FontWeight.Medium,
+                            color = AppleBlack,
+                            lineHeight = 20.sp
+                        ),
+                        cursorBrush = SolidColor(AppleBlack),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Default
+                        ),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("campaign_message_input")
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Bottom Row inside Prompt Box: Image Option on Right (Gemini style)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(AppleSystemGray6)
+                            .clickable {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                            .testTag("pick_image_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AddPhotoAlternate,
+                            contentDescription = "Add Product Image",
+                            tint = AppleBlack,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (formState.imageUri == null) "Add Photo" else "Change Photo",
+                            fontSize = 12.sp,
+                            fontFamily = AppleFontFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AppleBlack
+                        )
+                    }
+                }
+            }
+        }
+
+        // 4. Audience Selection: 4 Clean Segment Tiles in One Row
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(AppleCardBg)
+                .padding(horizontal = 14.dp, vertical = 10.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "SEND TO",
+                    fontSize = 10.sp,
+                    fontFamily = AppleFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp,
+                    color = AppleSystemGray
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AudiencePill(
+                        modifier = Modifier.weight(1f),
+                        label = "All",
+                        count = totalCount,
+                        isSelected = formState.targetAudience == "ALL",
+                        onClick = { onAudienceChange("ALL") }
+                    )
+                    AudiencePill(
+                        modifier = Modifier.weight(1f),
+                        label = "VIP",
+                        count = vipCount,
+                        isSelected = formState.targetAudience == "VIP",
+                        onClick = { onAudienceChange("VIP") }
+                    )
+                    AudiencePill(
+                        modifier = Modifier.weight(1f),
+                        label = "Regular",
+                        count = regularCount,
+                        isSelected = formState.targetAudience == "REGULAR",
+                        onClick = { onAudienceChange("REGULAR") }
+                    )
+                    AudiencePill(
+                        modifier = Modifier.weight(1f),
+                        label = "Inactive",
+                        count = dormantCount,
+                        isSelected = formState.targetAudience == "INACTIVE",
+                        onClick = { onAudienceChange("INACTIVE") }
+                    )
+                }
+            }
+        }
+
+        // Error message if validation fails
+        if (!formState.error.isNullOrBlank()) {
+            Text(
+                text = formState.error,
+                fontSize = 12.sp,
+                fontFamily = AppleFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                color = AppleBlack,
+                modifier = Modifier
+                    .padding(horizontal = 6.dp)
+                    .testTag("campaign_error_text")
+            )
+        }
+
+        // 5. Send / Start Campaign Action Button
+        Button(
+            onClick = {
+                focusManager.clearFocus()
+                onSubmit()
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+                .testTag("run_campaign_button"),
+            shape = RoundedCornerShape(25.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = AppleBlack,
+                contentColor = AppleWhite
+            ),
+            elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Send,
+                    contentDescription = null,
+                    tint = AppleWhite,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Send Offer to $targetCount Customers",
+                    fontSize = 14.sp,
+                    fontFamily = AppleFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = AppleWhite
+                )
             }
         }
     }
@@ -603,10 +519,10 @@ private fun AudiencePill(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(if (isSelected) AppleBlack else AppleSystemGray6)
             .clickable { onClick() }
-            .padding(vertical = 10.dp),
+            .padding(vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -624,8 +540,8 @@ private fun AudiencePill(
                 text = "$count",
                 fontSize = 11.sp,
                 fontFamily = AppleFontFamily,
-                fontWeight = FontWeight.Normal,
-                color = if (isSelected) AppleWhite.copy(alpha = 0.8f) else AppleSystemGray
+                fontWeight = FontWeight.Bold,
+                color = if (isSelected) AppleWhite.copy(alpha = 0.85f) else AppleSystemGray
             )
         }
     }
